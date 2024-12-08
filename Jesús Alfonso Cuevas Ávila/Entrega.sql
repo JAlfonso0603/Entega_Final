@@ -1,10 +1,11 @@
--- Procedimiento creado por: Jesús Alfonso Cuevas Ávila
--- Funcionamiento: Realizar un préstamo a nombre de un usuario ya existente que no cuente con adeudos.
+-- Operación creada por: Jesús Alfonso Cuevas Ávila
+-- Funcionamiento: Realizar un préstamo 
+-- Condiciones:
+-- 1. Usuario existente, perteneciente al grupo 'Clientes'.
+-- 2. Usuario sin préstamos atrasados.
+-- 3. No más de 5 préstamos activos por usuario.
 
 -- Cuerpo del procedimiento:
-
-SELECT * FROM Usuarios
-
 
 CREATE OR REPLACE FUNCTION info_usuario(
 	_idUsuario INTEGER
@@ -124,11 +125,14 @@ LANGUAGE plpgsql;
 
 CREATE OR REPLACE PROCEDURE realizar_prestamo (
 	_idUsuario INTEGER,
+	_idSucursal INTEGER,
 	_nombreManga CHARACTER VARYING (50), 
 	_cantidad INTEGER
 )
 AS $$
 DECLARE
+	_idManga INTEGER;
+	_idPrestamo INTEGER;
 BEGIN
  -- Comprobación de datos de usuario
 	IF(info_usuario(_idUsuario) = 'TRUE') THEN
@@ -138,8 +142,27 @@ BEGIN
 			IF(check_pending(_idUsuario) = 'TRUE') THEN
 				-- Comprobación de disponibilidad del manga
 				IF(check_available(_nombreManga, _cantidad) = 'TRUE') THEN
-					-- Proceder con la operación de préstamo.
+				 -- Proceder con la operación de préstamo.
+				 	SELECT idManga FROM Mangas WHERE nombreManga ~~* _nombreManga INTO _idManga;
+					INSERT INTO Prestamos (idSucursal, idUsuario, totalMangas, fechaPres, fechaDevSR, fechaDev, estadoPre) 
+					VALUES(
+						_idSucursal, 
+						_idUsuario, 
+						_cantidad, 
+						SELECT CURRENT_DATE, 
+						SELECT CURRENT_DATE + interval '30 days', 
+						NULL, 
+						'Pendiente'
+					);
 					
+					SELECT COALESCE(MAX(idPrestamo), 0) FROM Prestamos INTO _idPrestamo;
+					
+					INSERT INTO DetallePrestamos (idPrestamo, idManga, cantidad) 
+					VALUES(
+						_idPrestamo, 
+						_idManga, 
+						_cantidad
+					);
 				END IF;
 			END IF;
 		END IF;
