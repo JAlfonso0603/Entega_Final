@@ -7,7 +7,14 @@
 
 -- Cuerpo del procedimiento:
 
-CREATE OR REPLACE FUNCTION info_usuario(
+-- DROP FUNCTION check_user(INTEGER)
+-- DROP FUNCTION check_history (INTEGER)
+-- DROP FUNCTION check_pending (INTEGER)
+-- DROP FUNCTION check_available (CHARACTER VARYING(50), INTEGER)
+-- DROP PROCEDURE update_stock (INTEGER, INTEGER)
+-- DROP PROCEDURE realizar_prestamo (INTEGER, INTEGER, CHARACTER VARYING (50), INTEGER)
+
+CREATE OR REPLACE FUNCTION check_user(
 	_idUsuario INTEGER
 ) RETURNS BOOLEAN
 AS $$
@@ -40,7 +47,7 @@ END;
 $$
 LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION history_flags (
+CREATE OR REPLACE FUNCTION check_history (
 	_idUsuario INTEGER
 ) RETURNS BOOLEAN
 AS $$
@@ -51,7 +58,7 @@ BEGIN
 		FROM Usuarios U INNER JOIN Prestamos P ON U.idUsuario = P.idUsuario
 		WHERE U.idUsuario = _idUsuario AND P.estadoPre = 'Atrasado'
 	) THEN
-		RAISE NOTICE 'Préstamo rechazado: El usuario % tiene préstamos pendientes', _idUsuario;
+		RAISE NOTICE 'Préstamo rechazado: El usuario % tiene préstamos atrasados.', _idUsuario;
 		RETURN TRUE;
 	ELSE
 		RAISE NOTICE '<< History >> Check successful for user %.', _idUsuario;
@@ -89,7 +96,7 @@ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION check_available (
 	_nombreManga CHARACTER VARYING(50),
-	_cantidad INTEGER,
+	_cantidad INTEGER
 ) RETURNS BOOLEAN
 AS $$
 DECLARE
@@ -99,25 +106,43 @@ BEGIN
 	IF EXISTS (SELECT 1 FROM Mangas M WHERE nombreManga ~~* _nombreManga) THEN
 
 	 -- Comrpobar existencia real del manga
-		IF(SELECT habilitado FROM Mangas WHERE nombreManga = _nombreManga) THEN
+		IF(SELECT habilitado FROM Mangas WHERE nombreManga ~~* _nombreManga) THEN
 			 -- Comprobación de Stock
-				SELECT stock FROM Mangas WHERE nombreManga = _nombreManga INTO _stock;
+				SELECT stock FROM Mangas WHERE nombreManga ~~* _nombreManga INTO _stock;
 
-				IF(_stock > _cantidad) THEN
-					RAISE NOTICE '<< Manga >> Check successful for manga: %.', _nombreManga;
+				IF(_stock >= _cantidad) THEN
+					RAISE NOTICE '<< Available >> Check successful for manga: %.', _nombreManga;
 					RETURN TRUE;
 				ELSE
-					RAISE NOTICE 'Lo sentimos: Stock insuficiente.';
+					RAISE NOTICE 'Lo sentimos, stock insuficiente.';
 					RAISE NOTICE 'Stock disponible: %', _stock;
 					RETURN FALSE;
 				END IF;
 		ELSE
-			RAISE NOTICE 'El manga especificado no está disponible: ¡Pero volverá pronto!';
+			RAISE NOTICE 'El manga especificado no está disponible, ¡Pero volverá pronto!';
 			RETURN FALSE;
 		END IF;
 	ELSE
-		RAISE NOTICE 'No existe el manga especificado, o el nombre no es correcto.';
+		RAISE NOTICE 'Lo sentimos: No existe el manga especificado, o el nombre no es correcto.';
 		RETURN FALSE;
+	END IF;
+END;
+$$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE PROCEDURE update_stock (
+	_idManga INTEGER,
+	_cantidad INTEGER
+) 
+AS $$
+DECLARE
+	_currentStock INTEGER;
+BEGIN
+	UPDATE Mangas SET stock = stock - _cantidad WHERE idManga = _idManga;
+	UPDATE Mangas SET disponible = disponible - _cantidad WHERE idManga = _idManga;
+	SELECT stock FROM Mangas WHERE idManga = _idManga INTO _currentStock;
+	IF (_currentStock = 0) THEN
+		UPDATE Mangas SET habilitado = 'FALSE' WHERE idManga = _idManga;
 	END IF;
 END;
 $$
@@ -133,24 +158,30 @@ AS $$
 DECLARE
 	_idManga INTEGER;
 	_idPrestamo INTEGER;
+	_fechaPrestamo DATE;
+	_fechaEstDev DATE;
 BEGIN
  -- Comprobación de datos de usuario
-	IF(info_usuario(_idUsuario) = 'TRUE') THEN
+	IF(check_user(_idUsuario) = 'TRUE') THEN
 		-- Comprobación de préstamos atrasados
-		IF(history_flags(_idUsuario) != 'TRUE') THEN
+		IF(check_history(_idUsuario) != 'TRUE') THEN
 			-- Comprobación de préstamos activos.
 			IF(check_pending(_idUsuario) = 'TRUE') THEN
 				-- Comprobación de disponibilidad del manga
 				IF(check_available(_nombreManga, _cantidad) = 'TRUE') THEN
 				 -- Proceder con la operación de préstamo.
+				 
 				 	SELECT idManga FROM Mangas WHERE nombreManga ~~* _nombreManga INTO _idManga;
+					SELECT CURRENT_DATE INTO _fechaPrestamo;
+					SELECT CURRENT_DATE + interval '30 days' INTO _fechaEstDev;
+					
 					INSERT INTO Prestamos (idSucursal, idUsuario, totalMangas, fechaPres, fechaDevSR, fechaDev, estadoPre) 
 					VALUES(
 						_idSucursal, 
 						_idUsuario, 
 						_cantidad, 
-						SELECT CURRENT_DATE, 
-						SELECT CURRENT_DATE + interval '30 days', 
+						_fechaPrestamo, 
+						_fechaEstDev, 
 						NULL, 
 						'Pendiente'
 					);
@@ -163,6 +194,9 @@ BEGIN
 						_idManga, 
 						_cantidad
 					);
+
+					CALL update_stock(_idManga, _cantidad);
+
 				END IF;
 			END IF;
 		END IF;
@@ -170,3 +204,8 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
+
+SELECT * FROM Mangas;
+SELECT * FROM DetallePrestamos;
+
+CALL realizar_prestamo(7, 1, 'manga b', 6);
