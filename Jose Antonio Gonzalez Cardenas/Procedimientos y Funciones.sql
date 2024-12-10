@@ -10,197 +10,125 @@
 -- ---------------------------------------------------------------------------------------------------
 
 -- 1. Verificar Stock Disponible en Sucursal
-CREATE OR REPLACE FUNCTION verificar_stock_sucursal(
-    _idSucursal INT,  -- ID de la sucursal
-    _cantidad INT     -- Cantidad de mangas que se quiere verificar
-) RETURNS BOOLEAN
-AS $$
+CREATE OR REPLACE FUNCTION verificar_stock_disponible(id_manga INT, cantidad INT) 
+RETURNS BOOLEAN AS $$
 DECLARE
-    _totalDisponible INT := 0;  -- Variable para almacenar el total de mangas disponibles
-    _idDistribuidor INT;        -- Variable para almacenar el ID del distribuidor
+    stock_disponible INT;
 BEGIN
-    -- Paso 1: Obtener el distribuidor asociado a la sucursal
-    SELECT idDistribuidor INTO _idDistribuidor
-    FROM Sucursales 
-    WHERE idSucursal = _idSucursal;
-	
-    -- Paso 2: Sumar la cantidad total de mangas disponibles en los lotes del distribuidor
-    SELECT SUM(cantidadMangas) INTO _totalDisponible
-    FROM Lotes
-    WHERE idImprenta IN (
-        -- Subconsulta para obtener los lotes asignados al distribuidor
-        SELECT idImprenta 
-        FROM DetalleLotes 
-        WHERE idDistribuidor = _idDistribuidor
-    ) AND cantidadMangas > 0;  -- Asegurarse de contar solo los lotes con mangas disponibles
+    -- Paso 1: Obtener el stock disponible del manga desde la tabla Mangas
+    SELECT stock INTO stock_disponible
+    FROM Mangas
+    WHERE idManga = id_manga;
 
-    -- Paso 3: Verificar si hay suficiente stock disponible para la cantidad solicitada
-    IF _totalDisponible >= _cantidad THEN
-        RAISE NOTICE 'Stock disponible suficiente: % mangas.', _totalDisponible;
-        RETURN TRUE;  -- Stock suficiente, se puede proceder con la asignación
-    ELSE
-        RAISE NOTICE 'Stock insuficiente. Disponible: %, Requerido: %.', _totalDisponible, _cantidad;
-        RETURN FALSE;  -- No hay suficiente stock
+    -- Paso 2: Validar si el manga existe
+    IF stock_disponible IS NULL THEN
+        RETURN FALSE; -- Retorna FALSE si el manga no existe o no tiene stock registrado
     END IF;
-END;
-$$
-LANGUAGE plpgsql;
 
-
--- Uso de la Función:
-SELECT verificar_stock_sucursal(1, 3500);
-
-
-
-
--- 2. Verificar la Ubicación Física Disponible
-CREATE OR REPLACE FUNCTION verificar_ubicacion_disponible(
-    _idSucursal INT,        -- ID de la sucursal donde se verifica la ubicación
-    _seccion VARCHAR(10),   -- Sección de la ubicación
-    _pasillo VARCHAR(5),    -- Pasillo de la ubicación
-    _estanteria INT,        -- Estantería de la ubicación
-    _cantidad INT           -- Cantidad de mangas que se quieren almacenar
-) RETURNS BOOLEAN
-AS $$
-DECLARE
-    _capacidadDisponible INT := 700;  -- Capacidad total por defecto de la ubicación (100 mangas)
-    _mangasAlmacenadas INT := 0;      -- Variable para almacenar la cantidad de mangas ya almacenadas
-    _espacioDisponible INT;           -- Variable para calcular el espacio disponible en la ubicación
-BEGIN
-
-    -- Paso 1: Verificar cuántas mangas están almacenadas en la ubicación física
-    SELECT COALESCE(SUM(Lotes.cantidadMangas), 0) INTO _mangasAlmacenadas
-    FROM Lotes
-    JOIN DetalleLotes ON DetalleLotes.idLote = Lotes.idLote
-    WHERE DetalleLotes.idDistribuidor IN (
-        -- Subconsulta para obtener los lotes asociados a la sucursal
-        SELECT idDistribuidor
-        FROM Sucursales
-        WHERE idSucursal = _idSucursal
-    )
-    AND EXISTS (
-        -- Verificar si la ubicación especificada existe
-        SELECT 1 FROM UbicacionFisica 
-        WHERE idSucursal = _idSucursal 
-        AND seccion = _seccion
-        AND pasillo = _pasillo
-        AND estanteria = _estanteria
-    );
-    
-    -- Paso 2: Calcular el espacio disponible en la ubicación
-    _espacioDisponible := _capacidadDisponible - _mangasAlmacenadas;
-
-    -- Paso 3: Verificar si hay suficiente espacio en la ubicación física
-    IF _espacioDisponible >= _cantidad THEN
-        -- Si hay suficiente espacio
-        RAISE NOTICE 'Espacio disponible en la ubicación %-%-%: % mangas.', _seccion, _pasillo, _estanteria, _espacioDisponible;
-        RETURN TRUE;  -- Hay suficiente espacio para almacenar las mangas
+    -- Paso 3: Verificar si el stock disponible es suficiente
+    IF stock_disponible >= cantidad THEN
+        RETURN TRUE; -- Retorna TRUE si hay suficiente stock
     ELSE
-        -- Si no hay suficiente espacio
-        RAISE NOTICE 'No hay suficiente espacio en la ubicación %-%-% para almacenar % mangas. Espacio disponible: %.', 
-            _seccion, _pasillo, _estanteria, _cantidad, _espacioDisponible;
-        RETURN FALSE;  -- No hay suficiente espacio
+        RETURN FALSE; -- Retorna FALSE si el stock no es suficiente
     END IF;
 END;
 $$ LANGUAGE plpgsql;
 
+-- Uso de la Función:
+SELECT verificar_stock_disponible(2, 1);
+
+
+
+-- 2. Verificar la Ubicación Física Disponible
+CREATE OR REPLACE FUNCTION verificar_ubicacion_disponible(id_sucursal INT, id_manga INT, cantidad INT) 
+RETURNS BOOLEAN AS $$
+DECLARE
+    espacio_disponible INT;
+BEGIN
+    -- Paso 1: Obtener el espacio disponible de la ubicación física asignada al manga en la sucursal
+    SELECT estanteria INTO espacio_disponible
+    FROM UbicacionFisica
+    WHERE idSucursal = id_sucursal 
+    AND idUbicacion = (
+        SELECT idUbicacion -- Obtener la ubicación física del manga
+        FROM Mangas 
+        WHERE idManga = id_manga 
+        LIMIT 1
+    );
+    
+    -- Paso 2: Validar si la ubicación física existe en la sucursal
+    IF espacio_disponible IS NULL THEN
+        RETURN FALSE; -- Retorna FALSE si no hay ubicación registrada
+    END IF;
+
+    -- Paso 3: Verificar si el espacio disponible es suficiente para la cantidad de mangas solicitada
+    IF espacio_disponible >= cantidad THEN
+        RETURN TRUE; -- Retorna TRUE si hay suficiente espacio
+    ELSE
+        RETURN FALSE; -- Retorna FALSE si no hay suficiente espacio
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
 
 -- Uso de la Función:
-SELECT verificar_ubicacion_disponible(1, 'A', '1', 3, 50);
-
+SELECT verificar_ubicacion_disponible(1, 2, 1);
 
 
 
 -- 3. Asignar Mangas a Ubicación Física
-CREATE OR REPLACE PROCEDURE asignar_mangas_a_ubicacion(
-    _idSucursal INT,
-    _cantidad INT,
-    _seccion VARCHAR(10),
-    _pasillo VARCHAR(5),
-    _estanteria INT
-)
+CREATE OR REPLACE PROCEDURE asignar_manga_a_sucursal(id_sucursal INT, id_manga INT, cantidad INT)
 AS $$
-DECLARE
-    _cantidadRestante INT := _cantidad;  -- Inicializamos la cantidad restante a asignar
-    _stockLote INT;  -- Variable para almacenar el stock disponible en el lote
-    _idLote INT;  -- Variable para almacenar el ID del lote
-    _idDistribuidor INT;  -- Variable para almacenar el ID del distribuidor
 BEGIN
-
-    -- Paso 1: Obtener el distribuidor asociado a la sucursal
-    SELECT idDistribuidor INTO _idDistribuidor
-    FROM Sucursales 
-    WHERE idSucursal = _idSucursal;
-	
-    -- Paso 2: Obtener los lotes disponibles para el distribuidor de la sucursal
-    FOR _idLote IN
-        SELECT idLote
-        FROM DetalleLotes
-        WHERE idDistribuidor = _idDistribuidor
-    LOOP
-	
-        -- Paso 3: Verificar el stock disponible en cada lote
-        SELECT cantidadMangas INTO _stockLote
-        FROM Lotes
-        WHERE idLote = _idLote;
-		
-        -- Paso 4: Si hay mangas disponibles en el lote, proceder a asignarlas a la ubicación física
-        IF _stockLote > 0 THEN
-            -- Asignar mangas a la ubicación física
-            INSERT INTO UbicacionFisica (idSucursal, seccion, pasillo, estanteria)
-            VALUES (_idSucursal, _seccion, _pasillo, _estanteria);
-			
-            -- Paso 5: Si el lote tiene suficiente stock, asignar la cantidad restante
-            IF _stockLote >= _cantidadRestante THEN
-                -- Si el stock en el lote es suficiente para satisfacer la cantidad restante, restar esa cantidad
-                UPDATE Lotes 
-                SET cantidadMangas = _stockLote - _cantidadRestante
-                WHERE idLote = _idLote;
-                -- Notificar cuántas mangas se han asignado
-                RAISE NOTICE 'Asignados % mangas al lote %.', _cantidadRestante, _idLote;
-                -- Ya no hay mangas restantes por asignar
-                _cantidadRestante := 0; 
-            ELSE
-                -- Si no hay suficiente stock en el lote, asignar todo lo que haya en el lote
-                UPDATE Lotes 
-                SET cantidadMangas = 0  -- El lote queda vacío
-                WHERE idLote = _idLote;
-                -- Restar la cantidad que se ha asignado del total de mangas restantes
-                _cantidadRestante := _cantidadRestante - _stockLote;
-                -- Notificar cuántas mangas se han asignado y cuántas quedan por asignar
-                RAISE NOTICE 'Asignados % mangas al lote %. Restan % mangas.', _stockLote, _idLote, _cantidadRestante;
-            END IF;
-        END IF;
-
-        -- Paso 6: Si no quedan mangas restantes por asignar, salir del ciclo
-        IF _cantidadRestante = 0 THEN
-            RAISE NOTICE 'Todas las mangas han sido asignadas.';
-            RETURN;  -- Sale del ciclo si ya no quedan mangas para asignar
-        END IF;
-    END LOOP;
-
-    -- Paso 7: Si al final del ciclo aún hay mangas sin asignar, notificar el restante
-    IF _cantidadRestante > 0 THEN
-        RAISE NOTICE 'No se pudieron asignar todas las mangas. Restan % mangas sin asignar.', _cantidadRestante;
+    -- Paso 1: Verificar si hay stock disponible del manga solicitado
+    IF NOT verificar_stock_disponible(id_manga, cantidad) THEN
+        RAISE EXCEPTION 'No hay suficiente stock disponible para asignar. ID_Manga: %, Cantidad: %', id_manga, cantidad;
     END IF;
-END;
-$$
-LANGUAGE plpgsql;
 
+    -- Paso 2: Verificar si hay espacio suficiente en la ubicación física de la sucursal
+    IF NOT verificar_ubicacion_disponible(id_sucursal, id_manga, cantidad) THEN
+        RAISE EXCEPTION 'No hay espacio suficiente en la ubicación física de la sucursal. ID_Sucursal: %, ID_Manga: %, Cantidad: %', id_sucursal, id_manga, cantidad;
+    END IF;
+    
+    -- Paso 3: Asignar el manga a la ubicación física
+    UPDATE UbicacionFisica
+    SET estanteria = estanteria - cantidad
+    WHERE idSucursal = id_sucursal
+    AND idUbicacion = (
+        SELECT idUbicacion 
+        FROM Mangas 
+        WHERE idManga = id_manga 
+        LIMIT 1
+    );
+    
+    -- Paso 4: Reducir el stock del manga en la tabla Mangas
+    UPDATE Mangas
+    SET stock = stock - cantidad
+    WHERE idManga = id_manga;
+
+    -- Paso 5: Notificar que la asignación fue exitosa
+    RAISE NOTICE 'Mangas asignados correctamente a la sucursal.';
+END;
+$$ LANGUAGE plpgsql;
 
 -- Uso del Procedimiento:
-CALL asignar_mangas_a_ubicacion(
-    _idSucursal => 1,         -- ID de la sucursal donde se asignarán los mangas
-    _cantidad => 50,          -- Cantidad de mangas a asignar
-    _seccion => 'A',          -- Sección de la ubicación física
-    _pasillo => '1',         -- Pasillo de la ubicación física
-    _estanteria => 3          -- Número de la estantería de la ubicación física
-);
+CALL asignar_manga_a_sucursal(1, 2, 1);
+
 
 
 -- ---------------------------------------------------------------------------------------------------
-SELECT * FROM Lotes;
-SELECT * FROM DetalleLotes;
-SELECT * FROM Distribuidores;
+SELECT * FROM Mangas;
 SELECT * FROM Sucursales;
 SELECT * FROM UbicacionFisica;
+
+
+SELECT 
+    m.idManga,
+    m.nombreManga,
+    m.stock AS stock_disponible,
+    uf.idSucursal,
+    uf.seccion,
+    uf.pasillo,
+    uf.estanteria AS espacio_disponible
+FROM Mangas m
+JOIN UbicacionFisica uf ON m.idUbicacion = uf.idUbicacion
+WHERE m.idManga = 2 AND uf.idSucursal = 1 ;
