@@ -201,7 +201,7 @@ CALL realizar_prestamo(7, 1, 'manga b', 6);
 -- Fin del procedimiento
 ----------------------------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------------------------
--- Procedimiento de: Jesús Emmanuel Saldaña Álvarez
+-- Procedimiento de: Emmanuel Saldaña Álvarez
 ----------------------------------------------------------------------------------------------------------
 
 CREATE OR REPLACE PROCEDURE obtener_autores_top_mangas()
