@@ -1,18 +1,6 @@
--- Operación creada por: Jesús Alfonso Cuevas Ávila
--- Funcionamiento: Realizar un préstamo 
--- Condiciones:
--- 1. Usuario existente, perteneciente al grupo 'Clientes'.
--- 2. Usuario sin préstamos atrasados.
--- 3. No más de 5 préstamos activos por usuario.
-
--- Cuerpo del procedimiento:
-
--- DROP FUNCTION check_user(INTEGER)
--- DROP FUNCTION check_history (INTEGER)
--- DROP FUNCTION check_pending (INTEGER)
--- DROP FUNCTION check_available (CHARACTER VARYING(50), INTEGER)
--- DROP PROCEDURE update_stock (INTEGER, INTEGER)
--- DROP PROCEDURE realizar_prestamo (INTEGER, INTEGER, CHARACTER VARYING (50), INTEGER)
+---------------------------------------------------------------------------------------------------------
+-- Procedimiento de: Jesús Alfonso Cuevas Ávila
+---------------------------------------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION check_user(
 	_idUsuario INTEGER
@@ -205,8 +193,10 @@ END;
 $$
 LANGUAGE plpgsql;
 
-SELECT * FROM Mangas;
-SELECT * FROM DetallePrestamos;
-SELECT * FROM Prestamos;
+-- Ejemplo
 
 CALL realizar_prestamo(7, 1, 'manga b', 6);
+
+----------------------------------------------------------------------------------------------------------
+-- Fin del procedimiento
+----------------------------------------------------------------------------------------------------------
